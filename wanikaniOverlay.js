@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WK Overlay
 // @namespace    wkoverlay
-// @version      0.3.1
+// @version      0.3.2
 // @description  Overlays component information on reviews when show info is pressed.
 // @author       Ethan
 // @match        https://www.wanikani.com/review/session*
@@ -119,17 +119,23 @@ var addStyleTag = function(){
 
     var respComps = {};
     var masterRads = {};
-    var prompt;
+    var prompt = {};
     parentElement[0].appendChild(overlay);
     var newItem = false;
 
+    // just for comparing prompts
+    var shallowCompare = function(obj1, obj2){
+        return ((obj1.voc && obj2.voc) || (obj1.kan && obj2.kan) || (obj1.rad && obj2.rad)) && ((obj1.voc === obj2.voc) || (obj1.kan === obj2.kan) || (obj1.rad === obj2.rad));
+    };
     $.jStorage.listenKeyChange('currentItem', function(){
-        newItem = true;
         while (overlay.firstChild){
             overlay.removeChild(overlay.firstChild);
         }
         // Runs after span is changed, but is this guaranteed?
+        var oldPrompt = prompt;
         prompt = $.jStorage.get('currentItem');
+        newItem = !shallowCompare(prompt, oldPrompt);
+
         var itemString = prompt.voc||prompt.kan; // The kanji, vocab (or soon, radical)
         if (itemString){
             for (var ch in itemString){ // Kanji and radical, this will only be one (radical images may need some other handling)
