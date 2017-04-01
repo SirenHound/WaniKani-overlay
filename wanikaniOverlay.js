@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WK Overlay
 // @namespace    wkoverlay
-// @version      0.2.1
+// @version      0.3.1
 // @description  Overlays component information on reviews when show info is pressed.
 // @author       Ethan
 // @match        https://www.wanikani.com/review/session*
@@ -121,8 +121,10 @@ var addStyleTag = function(){
     var masterRads = {};
     var prompt;
     parentElement[0].appendChild(overlay);
+    var newItem = false;
 
     $.jStorage.listenKeyChange('currentItem', function(){
+        newItem = true;
         while (overlay.firstChild){
             overlay.removeChild(overlay.firstChild);
         }
@@ -140,211 +142,232 @@ var addStyleTag = function(){
         }
     });
 
-    // Show overlay when info is being shown.
-    $("#item-info").on(showEvent, function(evt){
-        console.info("showevt", evt);
-        //debugger;
-        if (evt.target && (evt.target.id === "all-info")){ //bug: relys on "show all info" button to be 'shown', need to listen for the shown div 'item-info' to complete loading/replacing
-            overlay.style.display = 'block';
-            //Since we are currently adding the tips every time we catch a show event, we must delete them all first, or multiple hide/show events will build up more tips for every 'show'
-            // Clear array of nodelists
-            while (overlay.firstChild){
-                overlay.removeChild(overlay.firstChild);
-            }
-            // Get the related kanji component info for vocab from the 'show answer' page
-            // Create an object (respComps) indexed by Kanji characters. eg {"出":" Exit","提":" Present, Submit"}
-            $("#related-items .kanji a").each(function(i, comp){
-                respComps[comp.childNodes[0].textContent] = comp.childNodes[1].textContent;
-            });
+    var showRadicalTags = function(){
+        console.warn("showtags");
+        overlay.style.display = 'block';
+        //Since we are currently adding the tips every time we catch a show event, we must delete them all first, or multiple hide/show events will build up more tips for every 'show'
+        // Clear array of nodelists
+        while (overlay.firstChild){
+            overlay.removeChild(overlay.firstChild);
+        }
+        // Get the related kanji component info for vocab from the 'show answer' page
+        // Create an object (respComps) indexed by Kanji characters. eg {"出":" Exit","提":" Present, Submit"}
+        $("#related-items .kanji a").each(function(i, comp){
+            respComps[comp.childNodes[0].textContent] = comp.childNodes[1].textContent;
+        });
 
-            if (prompt.voc){
-                // Create flip flop variable so tips with multiple words don't clutter the top or bottom
-                var flipTopBottom = false; //true: top, false: bottom
-                // Values will be the same for all char, but need to be calculated
-                // Position absolute needs negative margins to react to number of characters
-                var marginLeftPercentage = (-100/prompt.voc.length) + "%";
-                var marginRightPercentage = "2%";
-                for (var ch in prompt.voc){
-                    flipTopBottom = !flipTopBottom;
-                    var chSpan = document.createElement('span');
-                    chSpan.className = "wkOverlayChar";
+        if (prompt.voc){
+            // Create flip flop variable so tips with multiple words don't clutter the top or bottom
+            var flipTopBottom = false; //true: top, false: bottom
+            // Values will be the same for all char, but need to be calculated
+            // Position absolute needs negative margins to react to number of characters
+            var marginLeftPercentage = (-100/prompt.voc.length) + "%";
+            var marginRightPercentage = "2%";
+            for (var ch in prompt.voc){
+                flipTopBottom = !flipTopBottom;
+                var chSpan = document.createElement('span');
+                chSpan.className = "wkOverlayChar";
 
-                    var comp = document.createElement('span');
-                    comp.innerText = prompt.voc[ch];
-                    comp.style.opacity = 0;
-                    chSpan.appendChild(comp);
+                var comp = document.createElement('span');
+                comp.innerText = prompt.voc[ch];
+                comp.style.opacity = 0;
+                chSpan.appendChild(comp);
 
-                    console.info(respComps, prompt.voc[ch], respComps[prompt.voc[ch]]);
-                    chSpan.style.fontSize = document.defaultView.getComputedStyle($("#character")[0], "").fontSize; // and lineHeight
+                console.info(respComps, prompt.voc[ch], respComps[prompt.voc[ch]]);
+                chSpan.style.fontSize = document.defaultView.getComputedStyle($("#character")[0], "").fontSize; // and lineHeight
 
-                    // Javascript determined style values.
-                    overlay.style.height = $("#character span").height() + 'px';
-                    overlay.style.top = $("#character span").position().top + 'px';
-                    overlay.style.left = $("#character span").position().left + 'px';
-                    overlay.style.height = $("#character span").height() + 'px';
-
-                    overlay.appendChild(chSpan);
-
-                    if (respComps[prompt.voc[ch]]){ // any characters not present in the components section will fail here. There should be no Kanji in the prompt that is not here, so no Kanji should fail.
-                        var spInf = document.createElement('span');
-                        spInf.innerText = respComps[prompt.voc[ch]];
-
-                        chSpan.appendChild(spInf);
-                        spInf.style.marginLeft = marginLeftPercentage;
-                        //                    spInf.style.marginRight = marginRightPercentage;
-                        if(flipTopBottom){
-                            spInf.className = "infoSpan infoTop";
-                        }
-                        else{
-                            spInf.className = "infoSpan infoBottom";
-                        }
-                    }
-                }
-            }
-            if (prompt.kan){
-                var respRads = {};
-                var slug;
-                $("#related-items .radical a").each(function(i, comp){
-                    console.log("evt", evt);
-                    //debugger;
-                    if (comp.childNodes[0].textContent){
-                        slug = comp.childNodes[0].textContent;
-                        respRads[slug] = {name: comp.childNodes[1].textContent, kanji: {}};
-                    }
-                    else{
-                        slug = comp.childNodes[0].firstChild.className;// i class
-                        respRads[slug] = {box: comp.firstChild.firstChild, name: comp.childNodes[1].textContent, kanji: {}};
-                    }
-                    
-                    //get position from browser storage if there
-                    if ($.jStorage.get("overlayMasterRads")){
-                        masterRads =  $.jStorage.get("overlayMasterRads");
-                    }
-
-                    if (!masterRads[slug]){
-                        masterRads[slug] = respRads[slug];
-                    }
-
-                    if (masterRads[slug].kanji[prompt.kan]){
-                        respRads[slug].kanji[prompt.kan] = masterRads[slug].kanji[prompt.kan];
-                    }
-                    else{
-                        respRads[slug].kanji[prompt.kan] = {x: 0, y: 0};
-                    }
-                });
-                console.log("masterRads:", masterRads);
-                var kan = document.createElement('span');
-                kan.className = "wkOverlayChar";
-
-                kan.innerText = prompt.kan;
-                kan.style.opacity = 0.5; //debug kanji
-                //kan.appendChild(comp);
-
-                console.info("component object, kanji, compObj[kanji]", respComps, prompt.kan, respComps[prompt.kan]);// will probably only work on kanji that has itself as a radical (eg. 一)
-                kan.style.fontSize = document.defaultView.getComputedStyle($("#character")[0], "").fontSize; // and lineHeight
-
-                var overlayLeftOffset = $("#character span").position().left;
-                var overlayRightOffset = $("#character span").position().right;
                 // Javascript determined style values.
                 overlay.style.height = $("#character span").height() + 'px';
                 overlay.style.top = $("#character span").position().top + 'px';
-                overlay.style.left = overlayLeftOffset + 'px';
-                //overlay.style.right = (overlayLeftOffset+$(overlay).width()) + 'px';
-                //overlay.style.right = (-overlayRightOffset) + 'px';
-                //alert(overlay.style.right);
+                overlay.style.left = $("#character span").position().left + 'px';
                 overlay.style.height = $("#character span").height() + 'px';
 
-                //overlay.appendChild(kan);
+                overlay.appendChild(chSpan);
+//debugger;
+                if (respComps[prompt.voc[ch]]){ // any characters not present in the components section will fail here. There should be no Kanji in the prompt that is not here, so no Kanji should fail.
+                    var spInf = document.createElement('span');
+                    spInf.innerText = respComps[prompt.voc[ch]];
 
-                //respComps is radicals and their names as key->value pairs
-                // we need to give the radicals some more info (position, svg path around relevant part of kanji) than the kanji has
-                // add this info for each radical: object as scraped: {"疒":" Sick","正":" Correct"} => fn => {"疒":{name:" Sick", "症":{x:num, y:num, svg: svgElem },"正":{name:" Correct", "症":{x:num, y:num, svg: svgElem }}
-                // the kanji info bit: "症":{x:num, y:num, svg: svgElem }, needs to be creatable, editable, and retrievable.
-
-                var dragMouseDownHandler = function(evt){
-                    console.info("mousedown event was heard", evt);
-                    evt.preventDefault();
-                    console.log('mousedown == ', evt.type);
-                    this._mouseDownOrigin = {x: evt.clientX, y: evt.clientY};
-                    var elStyle = document.defaultView.getComputedStyle(evt.target, "");
-                    var l = elStyle.left; var t = elStyle.top;
-                    //var l = evt.target.style.left; var t = evt.target.style.top;
-                    this._originalPosition = {x: parseFloat(l.substr(0, l.length-1)), y: parseFloat(t.substr(0, t.length-1))};
-                    this._mouseMoveHandler = dragMouseMoveHandler.bind(this);
-                    this._mouseUpHandler = dragMouseUpHandler.bind(this);
-                    document.addEventListener('mousemove', this._mouseMoveHandler);
-                    //document.addEventListener('mousemove', dragMouseMoveHandler);
-                    document.addEventListener('mouseup', this._mouseUpHandler);
-                    document.addEventListener('mouseout', this._mouseUpHandler);
-                    //                this.addEventListener('mouseup', dragMouseUpHandler);
-                    //                this.addEventListener('mouseout', dragMouseUpHandler);
-                };
-                var dragMouseMoveHandler = function(evt){
-                    //nsole.log("mousemove", evt, this);
-                    if (this._mouseDownOrigin){
-
-                        var dx = evt.clientX - this._mouseDownOrigin.x;
-                        var dy = evt.clientY - this._mouseDownOrigin.y;
-                        var l = this.style.left||"0px"; var t = this.style.top||"0px";
-                        if (l[l.length-1] === "%" || t[t.length-1] === "%"){
-                            //    console.log("positioned with % ??");
-                        }
-                        else{
-                            //want the highest negative number to keep it in the document
-                            this.style.left = Math.max(-overlayLeftOffset, this._originalPosition.x + dx) + "px";
-                            this.style.right = -'100px';
-                            this.style.top = (this._originalPosition.y + dy) + "px";
-                        }
-                    }
-                };
-                var dragMouseUpHandler = function(evt){
-                    if (evt.type === 'mouseup' || evt.type === 'mouseout' && (evt.toElement === null)){ // mouseout leaves entire document
-                        // Check if this radical has a payload for the kanji, give it one if not.
-                        masterRads[this.slug].kanji[prompt.kan] = {x: this.style.left, y:this.style.top};
-                        //console.log("find x and y?", evt);
-                        $.jStorage.set("overlayMasterRads", masterRads);
-                        
-                        console.log("removing listeners", evt.type);
-                        document.removeEventListener('mousemove', this._mouseMoveHandler);
-                        document.removeEventListener('mouseup', this._mouseUpHandler);
-                        document.removeEventListener('mouseout', this._mouseUpHandler);
-                    }
-                };
-
-                // Order is not important for radicals since they are just like, all over the kanji, so we will just iterate.
-                for (var rad in respRads){
-                    var spRadName = document.createElement('span');
-                    var radBox = document.createElement('span');
-                    radBox.setAttribute("lang", "ja");
-                    radBox.className = "wkOverlayRadBox";
-                    if (!respRads[rad].box){
-                        radBox.appendChild(document.createTextNode(rad));
+                    chSpan.appendChild(spInf);
+                    spInf.style.marginLeft = marginLeftPercentage;
+                    //                    spInf.style.marginRight = marginRightPercentage;
+                    if(flipTopBottom){
+                        spInf.className = "infoSpan infoTop";
                     }
                     else{
-                        radBox.appendChild(respRads[rad].box.cloneNode());
+                        spInf.className = "infoSpan infoBottom";
                     }
-                    spRadName.slug = rad;
-                    spRadName.appendChild(radBox);
-                    spRadName.appendChild(document.createTextNode(respRads[rad].name));
-
-                    overlay.appendChild(spRadName);
-                    spRadName.style.marginLeft = (-100)*Math.random() + "%"; //more likely to see them if they are changed up a bit while we code
-                    spRadName.style.left = respRads[rad].kanji[prompt.kan].x;
-                    spRadName.style.top = respRads[rad].kanji[prompt.kan].y;
-                    spRadName.className = "infoRadSpan";
-
-                    //-- todo keep track of these in objects, enable/disable handlers in an edit/setup mode
-                    //masterRads.currentSlug = slug;
-                    spRadName.addEventListener('mousedown', dragMouseDownHandler);
                 }
             }
+        }
+        if (prompt.kan){
+            var respRads = {};
+            var slug;
+            $("#related-items .radical a").each(function(i, comp){
+                //debugger;
+                if (comp.childNodes[0].textContent){
+                    slug = comp.childNodes[0].textContent;
+                    respRads[slug] = {name: comp.childNodes[1].textContent, kanji: {}};
+                }
+                else{
+                    slug = comp.childNodes[0].firstChild.className;// i class
+                    respRads[slug] = {box: comp.firstChild.firstChild, name: comp.childNodes[1].textContent, kanji: {}};
+                }
+
+                //get position from browser storage if there
+                if ($.jStorage.get("overlayMasterRads")){
+                    masterRads =  $.jStorage.get("overlayMasterRads");
+                }
+
+                if (!masterRads[slug]){
+                    masterRads[slug] = respRads[slug];
+                }
+
+                if (masterRads[slug].kanji[prompt.kan]){
+                    respRads[slug].kanji[prompt.kan] = masterRads[slug].kanji[prompt.kan];
+                }
+                else{
+                    respRads[slug].kanji[prompt.kan] = {x: 0, y: 0};
+                }
+            });
+            console.log("masterRads:", masterRads);
+            var kan = document.createElement('span');
+            kan.className = "wkOverlayChar";
+
+            kan.innerText = prompt.kan;
+            kan.style.opacity = 0.5; //debug kanji
+            //kan.appendChild(comp);
+
+            console.info("component object, kanji, compObj[kanji]", respComps, prompt.kan, respComps[prompt.kan]);// will probably only work on kanji that has itself as a radical (eg. 一)
+            kan.style.fontSize = document.defaultView.getComputedStyle($("#character")[0], "").fontSize; // and lineHeight
+
+            var overlayLeftOffset = $("#character span").position().left;
+            var overlayRightOffset = $("#character span").position().right;
+            // Javascript determined style values.
+            overlay.style.height = $("#character span").height() + 'px';
+            overlay.style.top = $("#character span").position().top + 'px';
+            overlay.style.left = overlayLeftOffset + 'px';
+            //overlay.style.right = (overlayLeftOffset+$(overlay).width()) + 'px';
+            //overlay.style.right = (-overlayRightOffset) + 'px';
+            //alert(overlay.style.right);
+            overlay.style.height = $("#character span").height() + 'px';
+
+            //overlay.appendChild(kan);
+
+            //respComps is radicals and their names as key->value pairs
+            // we need to give the radicals some more info (position, svg path around relevant part of kanji) than the kanji has
+            // add this info for each radical: object as scraped: {"疒":" Sick","正":" Correct"} => fn => {"疒":{name:" Sick", "症":{x:num, y:num, svg: svgElem },"正":{name:" Correct", "症":{x:num, y:num, svg: svgElem }}
+            // the kanji info bit: "症":{x:num, y:num, svg: svgElem }, needs to be creatable, editable, and retrievable.
+
+            var dragMouseDownHandler = function(evt){
+                console.info("mousedown event was heard", evt);
+                evt.preventDefault();
+                console.log('mousedown == ', evt.type);
+                this._mouseDownOrigin = {x: evt.clientX, y: evt.clientY};
+                var elStyle = document.defaultView.getComputedStyle(evt.target, "");
+                var l = elStyle.left; var t = elStyle.top;
+                //var l = evt.target.style.left; var t = evt.target.style.top;
+                this._originalPosition = {x: parseFloat(l.substr(0, l.length-1)), y: parseFloat(t.substr(0, t.length-1))};
+                this._mouseMoveHandler = dragMouseMoveHandler.bind(this);
+                this._mouseUpHandler = dragMouseUpHandler.bind(this);
+                document.addEventListener('mousemove', this._mouseMoveHandler);
+                //document.addEventListener('mousemove', dragMouseMoveHandler);
+                document.addEventListener('mouseup', this._mouseUpHandler);
+                document.addEventListener('mouseout', this._mouseUpHandler);
+                //                this.addEventListener('mouseup', dragMouseUpHandler);
+                //                this.addEventListener('mouseout', dragMouseUpHandler);
+            };
+            var dragMouseMoveHandler = function(evt){
+                //nsole.log("mousemove", evt, this);
+                if (this._mouseDownOrigin){
+
+                    var dx = evt.clientX - this._mouseDownOrigin.x;
+                    var dy = evt.clientY - this._mouseDownOrigin.y;
+                    var l = this.style.left||"0px"; var t = this.style.top||"0px";
+                    if (l[l.length-1] === "%" || t[t.length-1] === "%"){
+                        //    console.log("positioned with % ??");
+                    }
+                    else{
+                        //want the highest negative number to keep it in the document
+                        this.style.left = Math.max(-overlayLeftOffset, this._originalPosition.x + dx) + "px";
+                        this.style.right = -'100px';
+                        this.style.top = (this._originalPosition.y + dy) + "px";
+                    }
+                }
+            };
+            var dragMouseUpHandler = function(evt){
+                if (evt.type === 'mouseup' || evt.type === 'mouseout' && (evt.toElement === null)){ // mouseout leaves entire document
+                    // Check if this radical has a payload for the kanji, give it one if not.
+                    masterRads[this.slug].kanji[prompt.kan] = {x: this.style.left, y:this.style.top};
+                    //console.log("find x and y?", evt);
+                    $.jStorage.set("overlayMasterRads", masterRads);
+
+                    console.log("removing listeners", evt.type);
+                    document.removeEventListener('mousemove', this._mouseMoveHandler);
+                    document.removeEventListener('mouseup', this._mouseUpHandler);
+                    document.removeEventListener('mouseout', this._mouseUpHandler);
+                }
+            };
+
+            // Order is not important for radicals since they are just like, all over the kanji, so we will just iterate.
+            for (var rad in respRads){
+                var spRadName = document.createElement('span');
+                var radBox = document.createElement('span');
+                radBox.setAttribute("lang", "ja");
+                radBox.className = "wkOverlayRadBox";
+                if (!respRads[rad].box){
+                    radBox.appendChild(document.createTextNode(rad));
+                }
+                else{
+                    radBox.appendChild(respRads[rad].box.cloneNode());
+                }
+                spRadName.slug = rad;
+                spRadName.appendChild(radBox);
+                spRadName.appendChild(document.createTextNode(respRads[rad].name));
+
+                overlay.appendChild(spRadName);
+                spRadName.style.marginLeft = (-100)*Math.random() + "%"; //more likely to see them if they are changed up a bit while we code
+                spRadName.style.left = respRads[rad].kanji[prompt.kan].x;
+                spRadName.style.top = respRads[rad].kanji[prompt.kan].y;
+                spRadName.style.cursor = "move";
+                spRadName.className = "infoRadSpan";
+
+                //-- todo keep track of these in objects, enable/disable handlers in an edit/setup mode
+                //masterRads.currentSlug = slug;
+                spRadName.addEventListener('mousedown', dragMouseDownHandler);
+            }
+        }
+    };
+
+    var observer = new MutationObserver(showRadicalTags);
+    //observer = new MutationObserver(function(mutation){console.log(mutation);});
+
+    var testObserve = new MutationObserver(function(mutations){
+                console.info("%cObserver", "background-color:grey");
+                console.info(typeof mutations);
+                console.groupCollapsed("Mutation List");
+                mutations.forEach(function(mutation){console.info(mutation.type);});
+                console.groupEnd();
+    });
+
+    // Show overlay when info is being shown.
+    $("#item-info").on(showEvent, function(evt){
+        console.info("showevt", evt);
+        if (newItem){
+            newItem = false;
+            //watch related items for change
+            observer.observe($("#item-info")[0], {childList: true, subtree:true});
+        }
+        else{
+            showRadicalTags();
         }
     });
 
     $("#item-info").on(hideEvent, function(evt){
-        console.info("hide evt", evt);
-        //debugger;
-        overlay.style.display = 'none';
-//      descOverlay.style.display = 'none';
+        if (evt.target.id === "additional-content-load"){
+            console.info("hide evt", evt);
+            //debugger;
+            overlay.style.display = 'none';
+        }
     });
 })();
